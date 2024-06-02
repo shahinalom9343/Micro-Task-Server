@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 const port = process.env.PORT || 5000;
@@ -29,9 +30,35 @@ async function run() {
     // collections
     const userCollection = client.db("picoTaskDB").collection("users");
 
+
+    // jwt related API
+    app.post("/jwt", async(req,res)=>{
+      const user = req.body;
+      const token = jwt.sign(user,process.env.ACCESS_TOKEN_SECRET,{
+        expiresIn:"1h"});
+      res.send({token})
+    })
+
+    // middlewares
+    const verifyToken = (req,res,next)=>{
+       console.log("inside verifytoken",req.headers.authorization);
+       if(!req.headers.authorization){
+        return res.status(401).send({message:"Forbidden Access"});
+       }
+       const token = req.headers.authorization.split(" ")[1];
+       jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
+        if(err){
+          return res.status(401).send({message:"Forbidden Access"});
+        }
+        req.decoded = decoded;
+        next();
+       })
+    }
+
     // user related api
     // get all users
-    app.get("/users", async(req,res)=>{
+    app.get("/users",verifyToken, async(req,res)=>{
+      
       const result = await userCollection.find().toArray();
       res.send(result);
     })
@@ -42,7 +69,18 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     })
-
+    // update user role
+    app.patch("/users/admin/:id", async(req,res)=>{
+      const id = req.params.id;
+      const filter={_id: new ObjectId(id)};
+      const updatedDoc = {
+        $set:{
+          role:"admin",
+        }
+      }
+      const result = await userCollection.updateOne(filter,updatedDoc);
+      res.send(result);
+    })
     // post all users
      app.post("/users", async(req,res)=>{
       const user = req.body;
