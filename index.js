@@ -29,6 +29,7 @@ async function run() {
 
     // collections
     const userCollection = client.db("picoTaskDB").collection("users");
+    const taskCollection = client.db("picoTaskDB").collection("tasks");
 
 
     // jwt related API
@@ -66,6 +67,14 @@ async function run() {
       }
       next();
     }
+
+    // task related api
+      app.post("/tasks", async(req,res)=>{
+      const task = req.body;
+      const result = await taskCollection.insertOne(task);
+      res.send(result);
+
+    })
 
     // user related api
     // get all users
@@ -120,7 +129,7 @@ async function run() {
       const result = await userCollection.insertOne(user);
       res.send(result);
 
-})
+    })
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
