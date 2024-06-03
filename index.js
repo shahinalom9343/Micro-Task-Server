@@ -69,11 +69,15 @@ async function run() {
     }
 
     // task related api
+     // get all tasks
+      app.get("/tasks", async(req,res)=>{
+      const result = await taskCollection.find().toArray();
+      res.send(result);
+    })
       app.post("/tasks", async(req,res)=>{
       const task = req.body;
       const result = await taskCollection.insertOne(task);
       res.send(result);
-
     })
 
     // user related api
