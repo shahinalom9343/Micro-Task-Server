@@ -74,10 +74,41 @@ async function run() {
       const result = await taskCollection.find().toArray();
       res.send(result);
     })
-      app.post("/tasks", async(req,res)=>{
+     // delete task
+    app.delete("/tasks/:id", verifyToken,verifyAdmin, async(req,res)=>{
+      const id =req.params.id;
+      const query = {_id: new ObjectId(id)};
+      const result = await taskCollection.deleteOne(query);
+      res.send(result);
+    })
+    app.post("/tasks", async(req,res)=>{
       const task = req.body;
       const result = await taskCollection.insertOne(task);
       res.send(result);
+    })
+    // get specific task for updated
+    app.get("/tasks/:id", async(req,res)=>{
+      const id = req.params.id;
+      const query = {_id: new ObjectId(id)};
+      const result = await taskCollection.findOne(query);
+      res.send(result);
+    })
+    // update task information
+    app.put("/tasks/:id", async(req,res)=>{
+      const id = req.params.id;
+      const filter = {_id: new ObjectId(id)};
+      const options = {upsert : true};
+      const updatedInfo = req.body;
+      const updated = {
+        $set:{
+           title : updatedInfo.title,
+           quantity: updatedInfo.quantity,
+           details: updatedInfo.details,
+        }
+      }
+      const result = await taskCollection.updateOne(filter,updated,options);
+      res.send(result);
+      
     })
 
     // user related api
