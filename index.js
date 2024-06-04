@@ -30,6 +30,7 @@ async function run() {
     // collections
     const userCollection = client.db("picoTaskDB").collection("users");
     const taskCollection = client.db("picoTaskDB").collection("tasks");
+    const submissionCollection = client.db("picoTaskDB").collection("submission");
 
 
     // jwt related API
@@ -79,6 +80,11 @@ async function run() {
       const id =req.params.id;
       const query = {_id: new ObjectId(id)};
       const result = await taskCollection.deleteOne(query);
+      res.send(result);
+    })
+    app.post("/submission", async(req,res)=>{
+      const submittedTask = req.body;
+      const result = await submissionCollection.insertOne(submittedTask);
       res.send(result);
     })
     app.post("/tasks", async(req,res)=>{
