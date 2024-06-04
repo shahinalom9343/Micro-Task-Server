@@ -43,7 +43,7 @@ async function run() {
 
     // middlewares
     const verifyToken = (req,res,next)=>{
-       console.log("inside verifytoken",req.headers.authorization);
+      //  console.log("inside verifytoken",req.headers.authorization);
        if(!req.headers.authorization){
         return res.status(401).send({message:"Unauthorized Access"});
        }
@@ -68,10 +68,21 @@ async function run() {
       }
       next();
     }
+    // check if user is creator or not
+    const verifyCreator = async(req,res,next)=>{
+      const email = req.decoded.email;
+      const query = {email:email};
+      const user = await userCollection.findOne(query);
+      const isCreator = user?.role ==="creator";
+      if(!isCreator){
+        return res.status(403).send({message:"Forbidden Access"});
+      }
+      next();
+    }
 
     // task related api
     // get all submitted tasks
-      app.get("/submission", async(req,res)=>{
+      app.get("/submission",verifyToken, async(req,res)=>{
       const result = await submissionCollection.find().toArray();
       res.send(result);
     })
@@ -87,18 +98,18 @@ async function run() {
       const result = await taskCollection.deleteOne(query);
       res.send(result);
     })
-    app.post("/submission", async(req,res)=>{
+    app.post("/submission",verifyToken, async(req,res)=>{
       const submittedTask = req.body;
       const result = await submissionCollection.insertOne(submittedTask);
       res.send(result);
     })
-    app.post("/tasks",verifyToken,verifyAdmin, async(req,res)=>{
+    app.post("/tasks",verifyToken, async(req,res)=>{
       const task = req.body;
       const result = await taskCollection.insertOne(task);
       res.send(result);
     })
     // get specific task for updated
-    app.get("/tasks/:id", async(req,res)=>{
+    app.get("/tasks/:id",verifyToken,verifyAdmin, async(req,res)=>{
       const id = req.params.id;
       const query = {_id: new ObjectId(id)};
       const result = await taskCollection.findOne(query);
@@ -127,6 +138,13 @@ async function run() {
     app.get("/users",verifyToken,verifyAdmin, async(req,res)=>{
       const result = await userCollection.find().toArray();
       res.send(result);
+    })
+
+    // get specific user
+        app.get('/users/:email', async (req, res) => {
+      const email = req.params.email
+      const result = await userCollection.findOne({ email })
+      res.send(result)
     })
 
     // verifyadminorNot
@@ -163,18 +181,39 @@ async function run() {
       const result = await userCollection.updateOne(filter,updatedDoc);
       res.send(result);
     })
-    // post all users
-     app.post("/users", async(req,res)=>{
+   // post all users
+    app.put('/users', async (req, res) => {
       const user = req.body;
-      // insert unique user
-      const query = {email:user.email};
-      const existingUser = await userCollection.findOne(query);
-      if(existingUser){
-        return res.send({message:"user already exists",insertedId:null})
+      const query = { email: user?.email };
+      // check if user already exists in db
+      const isExist = await userCollection.findOne(query)
+      if (isExist) {
+        if (user.status === 'Requested') {
+          // if existing user try to change his role
+          const result = await userCollection.updateOne(query, {
+            $set: { status: user?.status },
+          })
+          return res.send(result)
+        } else {
+          // if existing user login again
+          return res.send(isExist)
+        }
       }
-      const result = await userCollection.insertOne(user);
-      res.send(result);
-
+      // save user for the first time
+      const options = { upsert: true }
+      const updateDoc = {
+        $set: {
+          ...user,
+          timestamp: Date.now(),
+        },
+      }
+      const result = await userCollection.updateOne(query, updateDoc, options)
+      // // welcome new user
+      // sendEmail(user?.email, {
+      //   subject: 'Welcome to Stayvista!',
+      //   message: `Hope you will find you destination`,
+      // })
+      res.send(result)
     })
 
     // Send a ping to confirm a successful connection
