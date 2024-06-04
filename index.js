@@ -70,6 +70,11 @@ async function run() {
     }
 
     // task related api
+    // get all submitted tasks
+      app.get("/submission", async(req,res)=>{
+      const result = await submissionCollection.find().toArray();
+      res.send(result);
+    })
      // get all tasks
       app.get("/tasks", async(req,res)=>{
       const result = await taskCollection.find().toArray();
@@ -87,7 +92,7 @@ async function run() {
       const result = await submissionCollection.insertOne(submittedTask);
       res.send(result);
     })
-    app.post("/tasks", async(req,res)=>{
+    app.post("/tasks",verifyToken,verifyAdmin, async(req,res)=>{
       const task = req.body;
       const result = await taskCollection.insertOne(task);
       res.send(result);
