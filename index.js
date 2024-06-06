@@ -4,6 +4,7 @@ const cors = require("cors");
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 // middlewares
@@ -31,6 +32,7 @@ async function run() {
     const userCollection = client.db("picoTaskDB").collection("users");
     const taskCollection = client.db("picoTaskDB").collection("tasks");
     const submissionCollection = client.db("picoTaskDB").collection("submission");
+    const paymentCollection = client.db("picoTaskDB").collection("payments");
 
 
     // jwt related API
@@ -50,7 +52,7 @@ async function run() {
        const token = req.headers.authorization.split(" ")[1];
        jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
         if(err){
-          return res.status(401).send({message:"Unauthorized Access"});
+          return res.status(400).send({message:"Invalid token"});
         }
         req.decoded = decoded;
         next();
@@ -64,7 +66,7 @@ async function run() {
       const user = await userCollection.findOne(query);
       const isAdmin = user?.role ==="admin";
       if(!isAdmin){
-        return res.status(403).send({message:"Forbidden Access"});
+        return res.status(403).send({message:"Forbidden Admin Access"});
       }
       next();
     }
@@ -73,16 +75,16 @@ async function run() {
       const email = req.decoded.email;
       const query = {email:email};
       const user = await userCollection.findOne(query);
-      const isCreator = user?.role ==="creator";
+      const isCreator = user?.role ==="taskCreator";
       if(!isCreator){
-        return res.status(403).send({message:"Forbidden Access"});
+        return res.status(403).send({message:"Forbidden Creator Access"});
       }
       next();
     }
 
     // task related api
     // get all submitted tasks
-      app.get("/submission",verifyToken, async(req,res)=>{
+      app.get("/submission", async(req,res)=>{
       const result = await submissionCollection.find().toArray();
       res.send(result);
     })
@@ -98,7 +100,7 @@ async function run() {
       const result = await taskCollection.deleteOne(query);
       res.send(result);
     })
-    app.post("/submission",verifyToken, async(req,res)=>{
+    app.post("/submission", async(req,res)=>{
       const submittedTask = req.body;
       const result = await submissionCollection.insertOne(submittedTask);
       res.send(result);
@@ -108,15 +110,15 @@ async function run() {
       const result = await taskCollection.insertOne(task);
       res.send(result);
     })
-    // get specific task for updated
-    app.get("/tasks/:id",verifyToken,verifyAdmin, async(req,res)=>{
+    // get specific task for submission
+    app.get("/tasks/:id", async(req,res)=>{
       const id = req.params.id;
       const query = {_id: new ObjectId(id)};
       const result = await taskCollection.findOne(query);
       res.send(result);
     })
     // update task information
-    app.put("/tasks/:id", async(req,res)=>{
+    app.put("/tasks/:id", verifyToken,verifyCreator, async(req,res)=>{
       const id = req.params.id;
       const filter = {_id: new ObjectId(id)};
       const options = {upsert : true};
@@ -133,6 +135,36 @@ async function run() {
       
     })
 
+
+    // create payment intent
+    app.post('/create-payment-intent', verifyToken, async (req, res) => {
+      const {price} = req.body;
+      const amount = parseFloat(price*100);
+      if (!price || amount < 1) return
+      // generate clientSecret
+      const { client_secret } = await stripe.paymentIntents.create({
+        amount: amount,
+        currency: 'usd',
+        automatic_payment_methods: {
+          enabled: true,
+        },
+      })
+      // send client secret as response
+      res.send({ clientSecret: client_secret })
+    })
+     // get all payments
+    app.get("/payment",verifyToken,verifyCreator, async(req,res)=>{
+      const result = await paymentCollection.find().toArray();
+      res.send(result);
+    })
+    // Save a payment data in db
+    app.post('/payment', verifyToken, verifyCreator, async (req, res) => {
+      const paymentData = req.body
+      const result = await paymentCollection.insertOne(paymentData)
+      res.send(result)
+    })
+
+
     // user related api
     // get all users
     app.get("/users",verifyToken,verifyAdmin, async(req,res)=>{
@@ -141,7 +173,7 @@ async function run() {
     })
 
     // get specific user
-        app.get('/users/:email', async (req, res) => {
+    app.get('/users/:email', async (req, res) => {
       const email = req.params.email
       const result = await userCollection.findOne({ email })
       res.send(result)
@@ -169,17 +201,16 @@ async function run() {
       const result = await userCollection.deleteOne(query);
       res.send(result);
     })
-    // update user role
-    app.patch("/users/admin/:id",verifyToken,verifyAdmin, async(req,res)=>{
-      const id = req.params.id;
-      const filter={_id: new ObjectId(id)};
-      const updatedDoc = {
-        $set:{
-          role:"admin",
-        }
+    //update a user role
+    app.patch('/users/update/:email', verifyToken,verifyAdmin, async (req, res) => {
+      const email = req.params.email;
+      const user = req.body;
+      const query = { email };
+      const updateDoc = {
+        $set: { ...user, timestamp: Date.now() },
       }
-      const result = await userCollection.updateOne(filter,updatedDoc);
-      res.send(result);
+      const result = await userCollection.updateOne(query, updateDoc)
+      res.send(result)
     })
    // post all users
     app.put('/users', async (req, res) => {
