@@ -1,6 +1,7 @@
 const express = require("express");
 const app = express();
 const cors = require("cors");
+const nodemailer = require('nodemailer')
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -10,6 +11,42 @@ const port = process.env.PORT || 5000;
 // middlewares
 app.use(cors());
 app.use(express.json());
+
+// send email
+const sendEmail = (emailAddress, emailData) => {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false,
+    auth: {
+      user: process.env.TRANSPORTER_EMAIL,
+      pass: process.env.TRANSPORTER_PASS,
+    },
+  })
+  // verify connection
+  transporter.verify(function (error, success) {
+    if (error) {
+      console.log(error)
+    } else {
+      console.log('Server is ready to take our messages')
+    }
+  })
+  const mailBody = {
+    from: `"picoTask" <${process.env.TRANSPORTER_EMAIL}>`, 
+    to: emailAddress,
+    subject: emailData.subject, 
+    html: emailData.message, 
+  }
+
+  transporter.sendMail(mailBody, (error, info) => {
+    if (error) {
+      console.log(error)
+    } else {
+      console.log('Email Sent: ' + info.response)
+    }
+  })
+}
 
 // mongodb codes
 const uri = `mongodb+srv://${process.env.DB_USER}:${process.env.DB_PASS}@cluster0.43teffq.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0`;
@@ -33,7 +70,8 @@ async function run() {
     const taskCollection = client.db("picoTaskDB").collection("tasks");
     const submissionCollection = client.db("picoTaskDB").collection("submission");
     const paymentCollection = client.db("picoTaskDB").collection("payments");
-
+    const withdrawCollection = client.db("picoTaskDB").collection("withdraw");
+    const notificationCollection = client.db("picoTaskDB").collection("notification");
 
     // jwt related API
     app.post("/jwt", async(req,res)=>{
@@ -102,7 +140,19 @@ async function run() {
     })
     app.post("/submission", async(req,res)=>{
       const submittedTask = req.body;
+      // console.log(submittedTask);
       const result = await submissionCollection.insertOne(submittedTask);
+      // send email to worker
+      sendEmail(submittedTask?.user, {
+        subject: 'Submission Successful!',
+        message: `You've successfully submitted a task through picoTask.`,
+      })
+      // send email to creator
+      sendEmail(submittedTask?.creatorEmail, {
+        subject: 'Your task has submitted!',
+        message: `Get ready to welcome ${submittedTask?.creatorEmail}.`,
+      })
+
       res.send(result);
     })
     app.post("/tasks",verifyToken, async(req,res)=>{
@@ -215,6 +265,7 @@ async function run() {
    // post all users
     app.put('/users', async (req, res) => {
       const user = req.body;
+      console.log(user);
       const query = { email: user?.email };
       // check if user already exists in db
       const isExist = await userCollection.findOne(query)
@@ -239,12 +290,28 @@ async function run() {
         },
       }
       const result = await userCollection.updateOne(query, updateDoc, options)
-      // // welcome new user
-      // sendEmail(user?.email, {
-      //   subject: 'Welcome to Stayvista!',
-      //   message: `Hope you will find you destination`,
-      // })
+      // welcome message to email
+      sendEmail(user?.email, {
+        subject: 'Welcome to PicoTask Rush website!',
+        message: `Hope you will find a lot of resources which you find`,
+      })
       res.send(result)
+    })
+
+    // notificaiton related API
+    app.get("/notification", async(req,res)=>{
+      let query={};
+      if(req.query?.email){
+        query={email:req.query.email}
+      }
+      const result = await notificationCollection.find(query).toArray();
+      res.send(result);
+    })
+
+    app.post("/notification",async(req,res)=>{
+      const notificationData = req.body;
+      const result = await notificationCollection.insertOne(notificationData);
+      res.send(result);
     })
 
     // Send a ping to confirm a successful connection
