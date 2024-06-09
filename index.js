@@ -217,7 +217,7 @@ async function run() {
 
     // user related api
     // get all users
-    app.get("/users",verifyToken,verifyAdmin, async(req,res)=>{
+    app.get("/users", async(req,res)=>{
       const result = await userCollection.find().toArray();
       res.send(result);
     })
@@ -306,6 +306,32 @@ async function run() {
       }
       const result = await notificationCollection.find(query).toArray();
       res.send(result);
+    })
+
+    // Admin Statistics
+    app.get('/admin-stat',verifyToken,verifyAdmin, async (req, res) => {
+      const coinDetails = await submissionCollection
+        .find(
+          {},
+          {
+            projection: {
+              payable:1,
+            },
+          }
+        )
+        .toArray()
+
+      const totalUsers = await userCollection.countDocuments()
+      const totalPayments = await paymentCollection.countDocuments()
+      const totalCoins = coinDetails.reduce(
+        (sum, payAmount) => sum + parseFloat(payAmount.payable),
+        0
+      )
+      res.send({
+        totalUsers,
+        totalCoins,
+        totalPayments,
+      })
     })
 
     app.post("/notification",async(req,res)=>{
