@@ -2,6 +2,7 @@ const express = require("express");
 const app = express();
 const cors = require("cors");
 const nodemailer = require('nodemailer')
+const cookieParser = require('cookie-parser')
 const jwt = require('jsonwebtoken');
 require('dotenv').config();
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
@@ -9,8 +10,13 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 const port = process.env.PORT || 5000;
 
 // middlewares
-app.use(cors());
+app.use(
+  cors({
+    origin:["http://localhost:5173","https://picotask-rush.web.app","https://picotask-rush.firebaseapp.com"],
+    credentials:true,
+}));
 app.use(express.json());
+app.use(cookieParser())
 
 // send email
 const sendEmail = (emailAddress, emailData) => {
@@ -59,6 +65,11 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   }
 });
+const cookieOptions = {
+  httpOnly:true, 
+  sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'strict',
+  secure: process.env.NODE_ENV === 'production'? true : false,
+}
 
 async function run() {
   try {
@@ -78,7 +89,9 @@ async function run() {
       const user = req.body;
       const token = jwt.sign(user,process.env.ACCESS_TOKEN_SECRET,{
         expiresIn:"1h"});
-      res.send({token})
+       res
+        .cookie('token', token,cookieOptions)
+        .send({ success: true })
     })
 
     // middlewares
@@ -309,7 +322,7 @@ async function run() {
     })
 
     // Admin Statistics
-    app.get('/admin-stat',verifyToken,verifyAdmin, async (req, res) => {
+    app.get('/admin-stat', async (req, res) => {
       const coinDetails = await submissionCollection
         .find(
           {},
@@ -333,6 +346,53 @@ async function run() {
         totalPayments,
       })
     })
+    // Task creator Statistics
+    app.get('/creator-statistics', async (req, res) => {
+      const coinDetails = await submissionCollection
+        .find(
+          {},
+          {
+            projection: {
+              payable:1,
+            },
+          }
+        )
+        .toArray()
+
+      const totalUsers = await userCollection.countDocuments()
+      const totalPayments = await paymentCollection.countDocuments()
+      const totalCoins = coinDetails.reduce(
+        (sum, payAmount) => sum + parseFloat(payAmount.payable),
+        0
+      )
+      res.send({
+        totalUsers,
+        totalCoins,
+        totalPayments,
+      })
+    })
+    // Worker Statistics
+    app.get('/worker-stat',async (req, res) => {
+      const coinDetails = await submissionCollection
+        .find(
+          {},
+          {
+            projection: {
+              payable:1,
+            },
+          }
+        )
+        .toArray()
+      const totalSubmission = await submissionCollection.countDocuments()
+      const totalCoins = coinDetails.reduce(
+        (sum, payAmount) => sum + parseFloat(payAmount.payable),
+        0
+      )
+      res.send({
+        totalCoins,
+        totalSubmission,
+      })
+    })
 
     app.post("/notification",async(req,res)=>{
       const notificationData = req.body;
@@ -341,7 +401,7 @@ async function run() {
     })
 
     // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
+    // await client.db("admin").command({ ping: 1 });
     console.log("Pinged your deployment. You successfully connected to MongoDB!");
   } finally {
     // Ensures that the client will close when you finish/error
